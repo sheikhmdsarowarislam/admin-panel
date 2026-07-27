@@ -120,9 +120,7 @@ export default function Home() {
 
   const testAPI = async () => {
     try {
-      const res = await fetch(`${API_URL}?action=test`, {
-        headers: { 'X-Panel-Auth': 'active' }
-      });
+      const res = await fetch(`${API_URL}?action=test`);
       const result = await res.json();
       if (result.success) {
         setApiConnected(true);
@@ -139,9 +137,7 @@ export default function Home() {
   const loadCookies = async () => {
     setLoadingCookies(true);
     try {
-      const res = await fetch(`${API_URL}?action=list`, {
-        headers: { 'X-Panel-Auth': 'active' }
-      });
+      const res = await fetch(`${API_URL}?action=list`);
       const result = await res.json();
       if (result.success && result.data) {
         setAllCookies(result.data);
@@ -188,20 +184,22 @@ export default function Home() {
 
   const editCookie = async (id: number) => {
     try {
-      const res = await fetch(`${API_URL}?action=get&id=${id}`, {
-        headers: { 'X-Panel-Auth': 'active' }
-      });
+      const res = await fetch(`${API_URL}?action=get&id=${id}`);
       const result = await res.json();
       if (result.success) {
         setDomainInput(result.domain);
         setUrlInput(result.url);
-        setCookiesInput('');
+        try {
+          setCookiesInput(JSON.stringify(JSON.parse(result.cookies), null, 2));
+        } catch {
+          setCookiesInput(result.cookies);
+        }
         setEditingCookieId(id);
         window.scrollTo({ top: 0, behavior: 'smooth' });
-        showToast('✏️ Edit mode active: Paste new cookies & click Update', 'success');
+        showToast('📝 Cookie loaded in form for editing', 'success');
       }
     } catch (err: any) {
-      showToast('❌ Error loading item for edit', 'error');
+      showToast('❌ Error loading cookie data', 'error');
     }
   };
 
