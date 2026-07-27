@@ -9,8 +9,7 @@ const ALLOWED_DOMAINS = [
   'localhost:3000',
   'skilledustore.shop',
   'www.skilledustore.shop',
-  'admin-panel-plum-eight.vercel.app', // <-- এটি যোগ করুন
-  'vercel.app'                          // <-- যেকোনো vercel সাবডোমেইন এলাউ করার জন্য
+  'admin-panel-plum-eight.vercel.app',
 ];
 
 function isAllowedDomain(req: NextRequest) {
@@ -18,22 +17,31 @@ function isAllowedDomain(req: NextRequest) {
   const referer = req.headers.get('referer') || '';
   const userAgent = req.headers.get('user-agent') || '';
 
+  // ১. ক্ষতিকারক বট বা স্ক্র্যাপার ব্লক করা
   const blockedAgents = ['curl', 'wget', 'python', 'scrapy', 'bot'];
   for (const blocked of blockedAgents) {
     if (userAgent.toLowerCase().includes(blocked)) return false;
   }
 
-  if (!origin && !referer) return false;
-
-  let domain = '';
-  try {
-    const url = new URL(origin || referer);
-    domain = url.host;
-  } catch (e) {
-    return false;
+  // ২. যদি origin এবং referer দুটোই না থাকে (যেমন সরাসরি ব্রাউজার এক্সটেনশন বা অন-ক্লিক রিকোয়েস্ট)
+  if (!origin && !referer) {
+    return true; // এক্সেস এলাউ রাখা হচ্ছে যাতে বাটন কাজ করে
   }
 
-  return ALLOWED_DOMAINS.some(allowed => domain === allowed || domain.split(':')[0] === allowed);
+  let hostName = '';
+  try {
+    const url = new URL(origin || referer);
+    hostName = url.hostname; // host এর বদলে hostname দিলে পোর্ট নাম্বার ঝামেলা করে না
+  } catch (e) {
+    return true;
+  }
+
+  // ৩. ডোমেইন বা Vercel Subdomain চেক করা
+  return ALLOWED_DOMAINS.some(allowed => 
+    hostName === allowed || 
+    hostName.endsWith('.' + allowed) || 
+    hostName.endsWith('.vercel.app')
+  );
 }
 
 function corsHeaders(req: NextRequest) {
@@ -51,13 +59,17 @@ export async function OPTIONS(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
+  const headers = corsHeaders(req);
+
   if (!isAllowedDomain(req)) {
-    return NextResponse.json({ success: false, error: 'Forbidden', message: 'Access denied.' }, { status: 403 });
+    return NextResponse.json(
+      { success: false, error: 'Forbidden', message: 'Access denied.' }, 
+      { status: 403, headers } // Headers যুক্ত করা হয়েছে যেন ব্রাউজার CORS এরর না দেয়
+    );
   }
 
   const { searchParams } = new URL(req.url);
   const action = searchParams.get('action') || 'list';
-  const headers = corsHeaders(req);
 
   try {
     if (action === 'test') {
@@ -135,13 +147,14 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const headers = corsHeaders(req);
+
   if (!isAllowedDomain(req)) {
-    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403, headers });
   }
 
   const { searchParams } = new URL(req.url);
   const action = searchParams.get('action');
-  const headers = corsHeaders(req);
 
   try {
     const body = await req.json();
