@@ -120,7 +120,9 @@ export default function Home() {
 
   const testAPI = async () => {
     try {
-      const res = await fetch(`${API_URL}?action=test`);
+      const res = await fetch(`${API_URL}?action=test`, {
+        headers: { 'X-Panel-Auth': 'active' }
+      });
       const result = await res.json();
       if (result.success) {
         setApiConnected(true);
@@ -137,7 +139,9 @@ export default function Home() {
   const loadCookies = async () => {
     setLoadingCookies(true);
     try {
-      const res = await fetch(`${API_URL}?action=list`);
+      const res = await fetch(`${API_URL}?action=list`, {
+        headers: { 'X-Panel-Auth': 'active' }
+      });
       const result = await res.json();
       if (result.success && result.data) {
         setAllCookies(result.data);
@@ -184,29 +188,29 @@ export default function Home() {
 
   const editCookie = async (id: number) => {
     try {
-      const res = await fetch(`${API_URL}?action=get&id=${id}`);
+      const res = await fetch(`${API_URL}?action=get&id=${id}`, {
+        headers: { 'X-Panel-Auth': 'active' }
+      });
       const result = await res.json();
       if (result.success) {
         setDomainInput(result.domain);
         setUrlInput(result.url);
-        try {
-          setCookiesInput(JSON.stringify(JSON.parse(result.cookies), null, 2));
-        } catch {
-          setCookiesInput(result.cookies);
-        }
+        setCookiesInput(''); // সিকিউরিটির জন্য কুকির ঘর ফাকা থাকবে, নতুন কুকিজ পেস্ট করার সুযোগ দেওয়া হলো
         setEditingCookieId(id);
         window.scrollTo({ top: 0, behavior: 'smooth' });
-        showToast('📝 Cookie loaded in form for editing', 'success');
+        showToast('✏️ Edit mode active: Domain & URL loaded. Paste new cookies & click Update.', 'success');
       }
     } catch (err: any) {
-      showToast('❌ Error loading cookie data', 'error');
+      showToast('❌ Error loading item for edit', 'error');
     }
   };
 
   const deleteCookie = async (id: number) => {
     if (!confirm('Are you sure you want to delete this cookie session?')) return;
     try {
-      const res = await fetch(`${API_URL}?action=delete&id=${id}`);
+      const res = await fetch(`${API_URL}?action=delete&id=${id}`, {
+        headers: { 'X-Panel-Auth': 'active' }
+      });
       const result = await res.json();
       if (result.success) {
         showToast('✅ Cookie deleted', 'success');
@@ -221,7 +225,9 @@ export default function Home() {
   const injectCookie = async (id: number) => {
     try {
       showToast('⏳ Fetching session data...', 'success');
-      const res = await fetch(`${API_URL}?action=get&id=${id}`);
+      const res = await fetch(`${API_URL}?action=get&id=${id}`, {
+        headers: { 'X-Panel-Auth': 'active' }
+      });
       const result = await res.json();
       if (result.success) {
         window.postMessage({
@@ -236,7 +242,9 @@ export default function Home() {
 
   const copyHTMLCode = async (id: number) => {
     try {
-      const res = await fetch(`${API_URL}?action=gethtml&id=${id}`);
+      const res = await fetch(`${API_URL}?action=gethtml&id=${id}`, {
+        headers: { 'X-Panel-Auth': 'active' }
+      });
       const result = await res.json();
       if (result.success && result.html) {
         await navigator.clipboard.writeText(result.html);
@@ -362,7 +370,6 @@ export default function Home() {
                 </div>
                 <div className="cookie-url">🔗 {item.target_url}</div>
                 
-                {/* 🔒 নিরাপত্তার স্বার্থে এখানে কুকিজ পেস্ট/লিস্ট রেন্ডার বন্ধ রাখা হয়েছে */}
                 <div className="cookie-preview" style={{ background: '#f8f9fa', padding: '10px', borderRadius: '6px', fontSize: '12px', color: '#28a745', fontWeight: 'bold' }}>
                   🔒 Cookie Session Data Secured in Database
                 </div>

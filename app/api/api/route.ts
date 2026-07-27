@@ -9,8 +9,7 @@ const ALLOWED_DOMAINS = [
   'localhost:3000',
   'skilledustore.shop',
   'www.skilledustore.shop',
-  'admin-panel-plum-eight.vercel.app', // <-- এটি যোগ করুন
-  'vercel.app'                          // <-- যেকোনো vercel সাবডোমেইন এলাউ করার জন্য
+  'admin-panel-plum-eight.vercel.app',
 ];
 
 function isAllowedDomain(req: NextRequest) {
@@ -23,17 +22,21 @@ function isAllowedDomain(req: NextRequest) {
     if (userAgent.toLowerCase().includes(blocked)) return false;
   }
 
-  if (!origin && !referer) return false;
+  if (!origin && !referer) return true;
 
-  let domain = '';
+  let hostName = '';
   try {
     const url = new URL(origin || referer);
-    domain = url.host;
+    hostName = url.hostname;
   } catch (e) {
-    return false;
+    return true;
   }
 
-  return ALLOWED_DOMAINS.some(allowed => domain === allowed || domain.split(':')[0] === allowed);
+  return ALLOWED_DOMAINS.some(allowed => 
+    hostName === allowed || 
+    hostName.endsWith('.' + allowed) || 
+    hostName.endsWith('.vercel.app')
+  );
 }
 
 function corsHeaders(req: NextRequest) {
@@ -41,7 +44,7 @@ function corsHeaders(req: NextRequest) {
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Accept, X-Panel-Auth',
+    'Access-Control-Allow-Headers': 'Content-Type, Accept, X-Panel-Auth, Authorization',
     'Access-Control-Allow-Credentials': 'true',
   };
 }
@@ -51,49 +54,82 @@ export async function OPTIONS(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
+  const headers = corsHeaders(req);
+
   if (!isAllowedDomain(req)) {
-    return NextResponse.json({ success: false, error: 'Forbidden', message: 'Access denied.' }, { status: 403 });
+    return NextResponse.json({ success: false, error: 'Forbidden', message: 'Access denied.' }, { status: 403, headers });
   }
 
   const { searchParams } = new URL(req.url);
-  const action = searchParams.get('action') || 'list';
-  const headers = corsHeaders(req);
+  const token = searchParams.get('t');
+  const action = searchParams.get('action');
+  const id = searchParams.get('id');
+  const panelAuth = req.headers.get('x-panel-auth');
 
   try {
     if (action === 'test') {
-      return NextResponse.json({
-        success: true,
-        message: 'API is working',
-        database: 'Connected',
-        server_time: new Date().toISOString()
-      }, { headers });
+      return NextResponse.json({ success: true, message: 'API Connected', database: 'Connected' }, { headers });
     }
 
-    if (action === 'list') {
-      const [rows] = await pool.query('SELECT * FROM cookies ORDER BY created_at DESC');
-      return NextResponse.json({ success: true, data: rows }, { headers });
+    // 🔑 ১. বাটন থেকে টোকেন আসলে অটো-লগইনের ডাটা পাঠাবে
+    if (token) {
+      let targetId = '';
+      try {
+        const decoded = Buffer.from(token, 'base64').toString('utf-8');
+        targetId = decoded.split(':')[0];
+      } catch (e) {
+        targetId = token;
+      }
+
+      if (targetId) {
+        const [rows]: any = await pool.query('SELECT * FROM cookies WHERE id = ?', [targetId]);
+        if (rows.length > 0) {
+          const cookie = rows[0];
+          return NextResponse.json({
+            success: true,
+            url: cookie.target_url,
+            cookies: cookie.cookies_json,
+            domain: cookie.domain,
+            id: cookie.id
+          }, { headers });
+        }
+      }
+      return NextResponse.json({ success: false, error: 'Session expired or not found' }, { status: 404, headers });
     }
 
-    if (action === 'get') {
-      const id = searchParams.get('id');
-      if (!id) return NextResponse.json({ success: false, error: 'Missing ID' }, { status: 400, headers });
+    // 🔒 ২. ব্রাউজার থেকে সরাসরি ঢুকলে ব্লক
+    if (!panelAuth && (action === 'list' || action === 'get')) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Access Denied', 
+        message: 'Direct API navigation is restricted.' 
+      }, { status: 403, headers });
+    }
 
-      const [rows]: any = await pool.query('SELECT * FROM cookies WHERE id = ?', [id]);
+    // ✏️ ৩. এডিটের জন্য ফেচ (সিকিউরিটির জন্য কুকিজ ফাকা রিটার্ন করবে, কিন্তু ডোমেইন ও URL ফর্মে বসবে)
+    if (action === 'get' && id && panelAuth === 'active') {
+      const [rows]: any = await pool.query('SELECT id, domain, target_url FROM cookies WHERE id = ?', [id]);
       if (rows.length > 0) {
         const cookie = rows[0];
         return NextResponse.json({
           success: true,
-          url: cookie.target_url,
-          cookies: cookie.cookies_json,
+          id: cookie.id,
           domain: cookie.domain,
-          id: cookie.id
+          url: cookie.target_url,
+          cookies: ""
         }, { headers });
       }
       return NextResponse.json({ success: false, error: 'Cookie not found' }, { status: 404, headers });
     }
 
+    // 📋 ৪. প্যানেলের তালিকা ফেচ
+    if ((action === 'list' || !action) && panelAuth === 'active') {
+      const [rows]: any = await pool.query('SELECT id, domain, target_url, created_at FROM cookies ORDER BY created_at DESC');
+      return NextResponse.json({ success: true, data: rows }, { headers });
+    }
+
+    // 📋 ৫. HTML বাটন কোড
     if (action === 'gethtml') {
-      const id = searchParams.get('id');
       if (!id) return NextResponse.json({ success: false, error: 'Missing ID' }, { status: 400, headers });
 
       const [rows]: any = await pool.query('SELECT * FROM cookies WHERE id = ?', [id]);
@@ -105,82 +141,57 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, html: htmlCode }, { headers });
     }
 
-    if (action === 'domain') {
-      const domain = searchParams.get('domain');
-      if (!domain) return NextResponse.json({ success: false, error: 'Missing domain' }, { status: 400, headers });
-
-      const [rows]: any = await pool.query('SELECT * FROM cookies WHERE domain = ? LIMIT 1', [domain]);
-      if (rows.length > 0) {
-        return NextResponse.json({
-          success: true,
-          url: rows[0].target_url,
-          cookies: rows[0].cookies_json
-        }, { headers });
-      }
-      return NextResponse.json({ success: false, error: 'Domain not found' }, { status: 404, headers });
-    }
-
+    // 🗑️ ৬. ডিলিট করা
     if (action === 'delete') {
-      const id = searchParams.get('id');
       if (!id) return NextResponse.json({ success: false, error: 'Missing ID' }, { status: 400, headers });
 
       await pool.query('DELETE FROM cookies WHERE id = ?', [id]);
       return NextResponse.json({ success: true, message: 'Cookie deleted successfully' }, { headers });
     }
 
-    return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400, headers });
+    return NextResponse.json({ success: false, error: 'Invalid Action' }, { status: 400, headers });
+
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: 'Database error: ' + error.message }, { status: 500, headers });
+    return NextResponse.json({ success: false, error: 'Database error' }, { status: 500, headers });
   }
 }
 
 export async function POST(req: NextRequest) {
+  const headers = corsHeaders(req);
+
   if (!isAllowedDomain(req)) {
-    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403, headers });
   }
 
   const { searchParams } = new URL(req.url);
   const action = searchParams.get('action');
-  const headers = corsHeaders(req);
 
   try {
     const body = await req.json();
 
     if (action === 'login') {
       const { username, password } = body;
-      if (!username || !password) {
-        return NextResponse.json({ success: false, error: 'Username and password required' }, { status: 400, headers });
-      }
-
       const [rows]: any = await pool.query("SELECT * FROM admin_users WHERE username = ? AND status = 'active' LIMIT 1", [username]);
       if (rows.length > 0) {
         const user = rows[0];
         const match = await bcrypt.compare(password, user.password) || password === user.password;
         if (match) {
-          return NextResponse.json({ success: true, message: 'Login successful', username: user.username }, { headers });
+          return NextResponse.json({ success: true, message: 'Login successful' }, { headers });
         }
       }
-      return NextResponse.json({ success: false, error: 'Invalid username or password' }, { status: 401, headers });
+      return NextResponse.json({ success: false, error: 'Invalid credentials' }, { status: 401, headers });
     }
 
     if (action === 'add') {
       const { domain, url, cookies } = body;
-      if (!domain || !url || !cookies) {
-        return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400, headers });
-      }
-
       let cookiesJson = typeof cookies === 'string' ? cookies : JSON.stringify(cookies);
       const [result]: any = await pool.query('INSERT INTO cookies (domain, target_url, cookies_json, created_at) VALUES (?, ?, ?, NOW())', [domain, url, cookiesJson]);
 
-      return NextResponse.json({ success: true, id: result.insertId, message: 'Cookie added successfully' }, { status: 201, headers });
+      return NextResponse.json({ success: true, id: result.insertId, message: 'Cookie saved' }, { status: 201, headers });
     }
 
     if (action === 'update') {
       const { id, domain, url, cookies } = body;
-      if (!id || !domain || !url || !cookies) {
-        return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400, headers });
-      }
-
       let cookiesJson = typeof cookies === 'string' ? cookies : JSON.stringify(cookies);
       await pool.query('UPDATE cookies SET domain = ?, target_url = ?, cookies_json = ?, created_at = NOW() WHERE id = ?', [domain, url, cookiesJson, id]);
 
@@ -189,6 +200,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400, headers });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: 'Database error: ' + error.message }, { status: 500, headers });
+    return NextResponse.json({ success: false, error: 'Database error' }, { status: 500, headers });
   }
 }
