@@ -70,7 +70,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, message: 'API Connected', database: 'Connected' }, { headers });
     }
 
-    // 🔑 ১. বাটন থেকে আসা টোকেন রিকোয়েস্ট (ওয়েবসাইট বাটনের জন্য)
+    // 🔑 ১. শুধুমাত্র অটো-লগইন বাটন থেকে এনক্রিপ্টেড টোকেন (?t=) আসলে সেশন ডাটা এক্সটেনশনে যাবে
     if (token) {
       let targetId = '';
       try {
@@ -93,31 +93,21 @@ export async function GET(req: NextRequest) {
           }, { headers });
         }
       }
-      return NextResponse.json({ success: false, error: 'Session not found' }, { status: 404, headers });
+      return NextResponse.json({ success: false, error: 'Session expired or not found' }, { status: 404, headers });
     }
 
-    // 🔒 ২. শুধুমাত্র নির্দিষ্ট ১টি কুকির ডাটা তোলার জন্য (Edit & Inject-এর সময় এটি কল হবে)
-    if (action === 'get' && id) {
-      const [rows]: any = await pool.query('SELECT * FROM cookies WHERE id = ?', [id]);
-      if (rows.length > 0) {
-        const cookie = rows[0];
-        return NextResponse.json({
-          success: true,
-          url: cookie.target_url,
-          cookies: cookie.cookies_json,
-          domain: cookie.domain,
-          id: cookie.id
-        }, { headers });
-      }
-      return NextResponse.json({ success: false, error: 'Cookie not found' }, { status: 404, headers });
+    // 🔒 ২. সরাসরি 'action=get' করে কুকি দেখা সম্পূর্ণ বন্ধ করা হলো
+    if (action === 'get') {
+      return NextResponse.json({ success: false, error: 'Access Denied: Direct cookie payload fetching is disabled for security.' }, { status: 403, headers });
     }
 
-    // 🛡️ ৩. তালিকা দেখার জন্য (পোস্টম্যানে কুকিজ লিক ঠেকানোর জন্য 'cookies_json' বাদ রাখা হয়েছে)
+    // 📋 ৩. এডমিন প্যানেলের তালিকা (এখানে কোনো কুকি ডাটা পাঠানো হয় না)
     if (action === 'list' || !action) {
       const [rows]: any = await pool.query('SELECT id, domain, target_url, created_at FROM cookies ORDER BY created_at DESC');
       return NextResponse.json({ success: true, data: rows }, { headers });
     }
 
+    // 📋 ৪. HTML বাটন কোড কপি করার জন্য
     if (action === 'gethtml') {
       if (!id) return NextResponse.json({ success: false, error: 'Missing ID' }, { status: 400, headers });
 
@@ -130,6 +120,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, html: htmlCode }, { headers });
     }
 
+    // 🗑️ ৫. কুকি ডিলিট করা
     if (action === 'delete') {
       if (!id) return NextResponse.json({ success: false, error: 'Missing ID' }, { status: 400, headers });
 
@@ -170,6 +161,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Invalid credentials' }, { status: 401, headers });
     }
 
+    // ➕ নতুন কুকি ডাটাবেজে যুক্ত করা
     if (action === 'add') {
       const { domain, url, cookies } = body;
       let cookiesJson = typeof cookies === 'string' ? cookies : JSON.stringify(cookies);
@@ -178,12 +170,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, id: result.insertId, message: 'Cookie saved' }, { status: 201, headers });
     }
 
+    // 🔄 পুরনো কুকি ডাটাবেজে আপডেট / রিপ্লেস করা
     if (action === 'update') {
       const { id, domain, url, cookies } = body;
       let cookiesJson = typeof cookies === 'string' ? cookies : JSON.stringify(cookies);
       await pool.query('UPDATE cookies SET domain = ?, target_url = ?, cookies_json = ?, created_at = NOW() WHERE id = ?', [domain, url, cookiesJson, id]);
 
-      return NextResponse.json({ success: true, message: 'Cookie updated' }, { headers });
+      return NextResponse.json({ success: true, message: 'Cookie updated successfully' }, { headers });
     }
 
     return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400, headers });
