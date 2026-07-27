@@ -102,10 +102,11 @@ export async function GET(req: NextRequest) {
     }
 
     // 🔒 ৩. লিস্ট দেখার সময় কুকিজ হাইড থাকবে (কুকিজ_json পাঠানো হবে না)
-    if (action === 'list') {
-      const [rows]: any = await pool.query('SELECT id, domain, target_url, created_at FROM cookies ORDER BY created_at DESC');
-      return NextResponse.json({ success: true, data: rows }, { headers });
-    }
+    // 🔒 এডমিন প্যানেলের জন্য লিস্ট কল (cookies_json সহ)
+if (action === 'list') {
+  const [rows]: any = await pool.query('SELECT id, domain, target_url, cookies_json, created_at FROM cookies ORDER BY created_at DESC');
+  return NextResponse.json({ success: true, data: rows }, { headers });
+}
 
     if (action === 'test') {
       return NextResponse.json({ success: true, message: 'API Service Active' }, { headers });
