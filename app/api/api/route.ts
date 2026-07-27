@@ -97,16 +97,16 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Session expired or not found' }, { status: 404, headers });
     }
 
-    // 🔒 ২. ব্রাউজার থেকে সরাসরি ঢুকলে ব্লক
+    // 🔒 ২. সরাসরি ব্রাউজারে লিঙ্ক ভিজিট বা পোস্টম্যান থেকে সরাসরি ব্লক
     if (!panelAuth && (action === 'list' || action === 'get')) {
       return NextResponse.json({ 
         success: false, 
         error: 'Access Denied', 
-        message: 'Direct API navigation is restricted.' 
+        message: 'Direct API access restricted.' 
       }, { status: 403, headers });
     }
 
-    // ✏️ ৩. এডিটের জন্য ফেচ (সিকিউরিটির জন্য কুকিজ ফাকা রিটার্ন করবে, কিন্তু ডোমেইন ও URL ফর্মে বসবে)
+    // ✏️ ৩. এডিটের জন্য ফেচ (কুকিজ সম্পূর্ণ খালি পাঠাবে)
     if (action === 'get' && id && panelAuth === 'active') {
       const [rows]: any = await pool.query('SELECT id, domain, target_url FROM cookies WHERE id = ?', [id]);
       if (rows.length > 0) {
@@ -122,7 +122,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Cookie not found' }, { status: 404, headers });
     }
 
-    // 📋 ৪. প্যানেলের তালিকা ফেচ
+    // 📋 ৪. এডমিন প্যানেলের তালিকা ফেচ
     if ((action === 'list' || !action) && panelAuth === 'active') {
       const [rows]: any = await pool.query('SELECT id, domain, target_url, created_at FROM cookies ORDER BY created_at DESC');
       return NextResponse.json({ success: true, data: rows }, { headers });
@@ -141,7 +141,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, html: htmlCode }, { headers });
     }
 
-    // 🗑️ ৬. ডিলিট করা
+    // 🗑️ ৬. ডিলিট
     if (action === 'delete') {
       if (!id) return NextResponse.json({ success: false, error: 'Missing ID' }, { status: 400, headers });
 
@@ -190,6 +190,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, id: result.insertId, message: 'Cookie saved' }, { status: 201, headers });
     }
 
+    // 🔄 পুরনো কুকিজ রিপ্লেস আপডেট
     if (action === 'update') {
       const { id, domain, url, cookies } = body;
       let cookiesJson = typeof cookies === 'string' ? cookies : JSON.stringify(cookies);

@@ -157,7 +157,7 @@ export default function Home() {
 
   const saveCookie = async () => {
     if (!domainInput || !urlInput || !cookiesInput) {
-      showToast('❌ Please fill all fields', 'error');
+      showToast('❌ Please fill all fields including Cookies JSON', 'error');
       return;
     }
 
@@ -175,7 +175,7 @@ export default function Home() {
       const result = await res.json();
 
       if (result.success) {
-        showToast(editingCookieId ? '✅ Cookie updated successfully!' : '✅ Cookie saved successfully!', 'success');
+        showToast(editingCookieId ? '✅ Cookies updated & replaced successfully!' : '✅ Cookie saved successfully!', 'success');
         clearForm();
         loadCookies();
       } else {
@@ -186,23 +186,14 @@ export default function Home() {
     }
   };
 
-  const editCookie = async (id: number) => {
-    try {
-      const res = await fetch(`${API_URL}?action=get&id=${id}`, {
-        headers: { 'X-Panel-Auth': 'active' }
-      });
-      const result = await res.json();
-      if (result.success) {
-        setDomainInput(result.domain);
-        setUrlInput(result.url);
-        setCookiesInput(''); // সিকিউরিটির জন্য কুকির ঘর ফাকা থাকবে, নতুন কুকিজ পেস্ট করার সুযোগ দেওয়া হলো
-        setEditingCookieId(id);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        showToast('✏️ Edit mode active: Domain & URL loaded. Paste new cookies & click Update.', 'success');
-      }
-    } catch (err: any) {
-      showToast('❌ Error loading item for edit', 'error');
-    }
+  // ✏️ সরাসরি ডোমেন এবং ইউআরএল ফর্ম ফিল্ডে চলে আসবে, কুকিজ ঘর খালি থাকবে
+  const editCookie = (item: any) => {
+    setDomainInput(item.domain);
+    setUrlInput(item.target_url);
+    setCookiesInput(''); // কুকিজ ইনপুট খালি থাকবে
+    setEditingCookieId(item.id);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    showToast(`✏️ Editing: ${item.domain}. Paste new Cookies JSON and click Update.`, 'success');
   };
 
   const deleteCookie = async (id: number) => {
@@ -318,7 +309,7 @@ export default function Home() {
       <div className="panel">
         <div className={`api-status ${apiConnected ? 'connected' : 'disconnected'}`}>{apiStatusText}</div>
         <h2 style={{ marginBottom: '20px', color: '#333' }}>
-          {editingCookieId ? '✏️ Edit Cookie Session' : 'Add New Cookie Session'}
+          {editingCookieId ? '✏️ Update Cookie Session' : 'Add New Cookie Session'}
         </h2>
         <div className="form-group">
           <label>Domain *</label>
@@ -331,7 +322,7 @@ export default function Home() {
         <div className="form-group">
           <label>Cookies (JSON Array) *</label>
           <textarea
-            placeholder='[{"name": "session", "value": "abc123", "domain": "example.com"}]'
+            placeholder='Paste new cookies JSON here...'
             value={cookiesInput}
             onChange={(e) => setCookiesInput(e.target.value)}
           ></textarea>
@@ -376,7 +367,7 @@ export default function Home() {
 
                 <div className="cookie-actions">
                   <button className="btn btn-success" onClick={() => injectCookie(item.id)}>🚀 Inject & Login</button>
-                  <button className="btn btn-primary" onClick={() => editCookie(item.id)}>✏️ Edit</button>
+                  <button className="btn btn-primary" onClick={() => editCookie(item)}>✏️ Edit</button>
                   <button className="btn btn-danger" onClick={() => deleteCookie(item.id)}>🗑️ Delete</button>
                   <button className="btn btn-warning" onClick={() => copyHTMLCode(item.id)}>📋 Copy HTML Code</button>
                 </div>
