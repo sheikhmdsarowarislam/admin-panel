@@ -179,9 +179,18 @@ export async function POST(req: NextRequest) {
     if (action === 'add') {
       const { domain, url, cookies } = body;
       let cookiesJson = typeof cookies === 'string' ? cookies : JSON.stringify(cookies);
-      const [result]: any = await pool.query('INSERT INTO cookies (domain, target_url, cookies_json, created_at) VALUES (?, ?, ?, NOW())', [domain, url, cookiesJson]);
 
-      return NextResponse.json({ success: true, id: result.insertId, message: 'Cookie saved' }, { status: 201, headers });
+      // ১. ডাটাবেজ থেকে বর্তমান সর্বোচ্চ (Max) ID খুঁজে বের করা
+      const [maxRows]: any = await pool.query('SELECT MAX(id) as maxId FROM cookies');
+      const nextId = (maxRows[0]?.maxId || 0) + 1;
+
+      // ২. ম্যানুয়ালি পরবর্তী আইডি যুক্ত করে ইনসার্ট করা
+      await pool.query(
+        'INSERT INTO cookies (id, domain, target_url, cookies_json, created_at) VALUES (?, ?, ?, ?, NOW())',
+        [nextId, domain, url, cookiesJson]
+      );
+
+      return NextResponse.json({ success: true, id: nextId, message: 'Cookie saved successfully' }, { status: 201, headers });
     }
 
     if (action === 'update') {
