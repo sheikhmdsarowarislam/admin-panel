@@ -90,10 +90,9 @@ export async function GET(req: NextRequest) {
           return NextResponse.json({ success: false, error: 'Invalid Token Format' }, { status: 400, headers });
         }
 
-        // ⏱️ ৩০ সেকেন্ড সময়সীমা
         const tokenTime = parseInt(timestamp, 10);
         const currentTime = Math.floor(Date.now() / 1000);
-        if (currentTime - tokenTime > 30) {
+        if (currentTime - tokenTime > 10) {
           return NextResponse.json({ success: false, error: 'Token Expired! Re-click button from website.' }, { status: 403, headers });
         }
 
