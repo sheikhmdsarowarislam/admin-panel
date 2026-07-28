@@ -64,13 +64,13 @@ export async function GET(req: NextRequest) {
   const token = searchParams.get('t');
   const action = searchParams.get('action');
   const id = searchParams.get('id');
+  const panelAuth = req.headers.get('x-panel-auth');
 
   try {
     if (action === 'test') {
       return NextResponse.json({ success: true, message: 'API Connected', database: 'Connected' }, { headers });
     }
 
-    // 🔑 ১. শুধুমাত্র অটো-লগইন বাটন থেকে এনক্রিপ্টেড টোকেন (?t=) আসলে সেশন ডাটা এক্সটেনশনে যাবে
     if (token) {
       let targetId = '';
       try {
@@ -96,18 +96,34 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Session expired or not found' }, { status: 404, headers });
     }
 
-    // 🔒 ২. সরাসরি 'action=get' করে কুকি দেখা সম্পূর্ণ বন্ধ করা হলো
-    if (action === 'get') {
-      return NextResponse.json({ success: false, error: 'Access Denied: Direct cookie payload fetching is disabled for security.' }, { status: 403, headers });
+    if (!panelAuth && (action === 'list' || action === 'get')) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Access Denied', 
+        message: 'Direct API access restricted.' 
+      }, { status: 403, headers });
     }
 
-    // 📋 ৩. এডমিন প্যানেলের তালিকা (এখানে কোনো কুকি ডাটা পাঠানো হয় না)
-    if (action === 'list' || !action) {
+    if (action === 'get' && id && panelAuth === 'active') {
+      const [rows]: any = await pool.query('SELECT id, domain, target_url FROM cookies WHERE id = ?', [id]);
+      if (rows.length > 0) {
+        const cookie = rows[0];
+        return NextResponse.json({
+          success: true,
+          id: cookie.id,
+          domain: cookie.domain,
+          url: cookie.target_url,
+          cookies: ""
+        }, { headers });
+      }
+      return NextResponse.json({ success: false, error: 'Cookie not found' }, { status: 404, headers });
+    }
+
+    if ((action === 'list' || !action) && panelAuth === 'active') {
       const [rows]: any = await pool.query('SELECT id, domain, target_url, created_at FROM cookies ORDER BY created_at DESC');
       return NextResponse.json({ success: true, data: rows }, { headers });
     }
 
-    // 📋 ৪. HTML বাটন কোড কপি করার জন্য
     if (action === 'gethtml') {
       if (!id) return NextResponse.json({ success: false, error: 'Missing ID' }, { status: 400, headers });
 
@@ -120,7 +136,6 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, html: htmlCode }, { headers });
     }
 
-    // 🗑️ ৫. কুকি ডিলিট করা
     if (action === 'delete') {
       if (!id) return NextResponse.json({ success: false, error: 'Missing ID' }, { status: 400, headers });
 
@@ -131,7 +146,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Invalid Action' }, { status: 400, headers });
 
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: 'Database error' }, { status: 500, headers });
+    return NextResponse.json({ success: false, error: error.message || 'Database error' }, { status: 500, headers });
   }
 }
 
@@ -161,7 +176,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Invalid credentials' }, { status: 401, headers });
     }
 
-    // ➕ নতুন কুকি ডাটাবেজে যুক্ত করা
     if (action === 'add') {
       const { domain, url, cookies } = body;
       let cookiesJson = typeof cookies === 'string' ? cookies : JSON.stringify(cookies);
@@ -170,7 +184,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, id: result.insertId, message: 'Cookie saved' }, { status: 201, headers });
     }
 
-    // 🔄 পুরনো কুকি ডাটাবেজে আপডেট / রিপ্লেস করা
     if (action === 'update') {
       const { id, domain, url, cookies } = body;
       let cookiesJson = typeof cookies === 'string' ? cookies : JSON.stringify(cookies);
@@ -181,6 +194,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400, headers });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: 'Database error' }, { status: 500, headers });
+    return NextResponse.json({ success: false, error: error.message || 'Database error' }, { status: 500, headers });
   }
 }

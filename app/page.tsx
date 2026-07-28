@@ -169,7 +169,10 @@ export default function Home() {
 
       const res = await fetch(`${API_URL}?action=${action}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-Panel-Auth': 'active'
+        },
         body: JSON.stringify(payload)
       });
       const result = await res.json();
@@ -179,18 +182,17 @@ export default function Home() {
         clearForm();
         loadCookies();
       } else {
-        showToast('❌ Error: ' + result.error, 'error');
+        showToast('❌ Error: ' + (result.error || 'Failed to save'), 'error');
       }
     } catch (err: any) {
       showToast('❌ Error: Invalid JSON Format', 'error');
     }
   };
 
-  // ✏️ সরাসরি ডোমেন এবং ইউআরএল ফর্ম ফিল্ডে চলে আসবে, কুকিজ ঘর খালি থাকবে
   const editCookie = (item: any) => {
     setDomainInput(item.domain);
     setUrlInput(item.target_url);
-    setCookiesInput(''); // কুকিজ ইনপুট খালি থাকবে
+    setCookiesInput('');
     setEditingCookieId(item.id);
     window.scrollTo({ top: 0, behavior: 'smooth' });
     showToast(`✏️ Editing: ${item.domain}. Paste new Cookies JSON and click Update.`, 'success');
