@@ -1,17 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 
-// আপনার ব্যাকএন্ড ফোল্ডার স্ট্রাকচার অনুযায়ী আপডেট করা URL
-const API_URL = '/api/api/vault-core-db/v1/connect';
+const API_URL = '/api/proxy';
 const SESSION_KEY = 'cookie_manager_auth';
-
-interface CookieItem {
-  id: number;
-  domain: string;
-  target_url: string;
-  created_at: string;
-}
 
 export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -31,8 +23,8 @@ export default function Home() {
   const [cookiesInput, setCookiesInput] = useState('');
   const [editingCookieId, setEditingCookieId] = useState<number | null>(null);
 
-  const [allCookies, setAllCookies] = useState<CookieItem[]>([]);
-  const [filteredCookies, setFilteredCookies] = useState<CookieItem[]>([]);
+  const [allCookies, setAllCookies] = useState<any[]>([]);
+  const [filteredCookies, setFilteredCookies] = useState<any[]>([]);
   const [searchInput, setSearchInput] = useState('');
   const [loadingCookies, setLoadingCookies] = useState(false);
 
@@ -43,7 +35,6 @@ export default function Home() {
     setTimeout(() => setToast(null), 4000);
   };
 
-  // ১. সেশন চেক করা (স্বয়ংক্রিয় লগইন)
   useEffect(() => {
     const savedAuth = sessionStorage.getItem(SESSION_KEY);
     if (savedAuth) {
@@ -59,50 +50,6 @@ export default function Home() {
     }
   }, []);
 
-  // ২. API সংযোগ পরীক্ষা করা
-  const testAPI = useCallback(async () => {
-    try {
-      const res = await fetch(`${API_URL}?action=test`, {
-        headers: { 'X-Panel-Auth': 'active' }
-      });
-      const result = await res.json();
-      if (result.success) {
-        setApiConnected(true);
-        setApiStatusText('🟢 API Connected: ' + (result.database || 'Active'));
-      } else {
-        throw new Error(result.error || 'API Failed');
-      }
-    } catch (err: any) {
-      setApiConnected(false);
-      setApiStatusText('🔴 API Error');
-    }
-  }, []);
-
-  // ৩. ডাটাবেজ থেকে কুকিজ লোড করা
-  const loadCookies = useCallback(async () => {
-    setLoadingCookies(true);
-    try {
-      const res = await fetch(`${API_URL}?action=list`, {
-        headers: { 'X-Panel-Auth': 'active' }
-      });
-      const result = await res.json();
-      if (result.success && Array.isArray(result.data)) {
-        setAllCookies(result.data);
-        setFilteredCookies(result.data);
-      } else {
-        setAllCookies([]);
-        setFilteredCookies([]);
-      }
-    } catch (err) {
-      setAllCookies([]);
-      setFilteredCookies([]);
-      showToast('❌ Failed to load cookies from server', 'error');
-    } finally {
-      setLoadingCookies(false);
-    }
-  }, []);
-
-  // ৪. লগইন হলে ইভেন্ট লিসেনার ও API কল শুরু
   useEffect(() => {
     if (isAuthenticated) {
       testAPI();
@@ -121,7 +68,7 @@ export default function Home() {
         }
         if (event.data.type === 'SETUP_RESPONSE') {
           if (event.data.response?.success) {
-            showToast('✅ Session injected successfully!', 'success');
+            showToast('✅ Session injected! Opening in new tab...', 'success');
           } else {
             showToast('❌ Failed to inject session', 'error');
           }
@@ -133,9 +80,8 @@ export default function Home() {
 
       return () => window.removeEventListener('message', handleMessage);
     }
-  }, [isAuthenticated, testAPI, loadCookies]);
+  }, [isAuthenticated]);
 
-  // ৫. লগইন ফর্ম হ্যান্ডলার
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
@@ -158,13 +104,12 @@ export default function Home() {
         setLoginError('❌ ' + (result.error || 'Invalid credentials'));
       }
     } catch (err) {
-      setLoginError('❌ Connection error! Please check server status.');
+      setLoginError('❌ Connection error!');
     } finally {
       setIsLoggingIn(false);
     }
   };
 
-  // ৬. সাইন আউট
   const logout = () => {
     if (confirm('Are you sure you want to logout?')) {
       sessionStorage.removeItem(SESSION_KEY);
@@ -173,20 +118,51 @@ export default function Home() {
     }
   };
 
-  // ৭. কুকি তৈরি/আপডেট করা
+  const testAPI = async () => {
+    try {
+      const res = await fetch(`${API_URL}?action=test`, {
+        headers: { 'X-Panel-Auth': 'active' }
+      });
+      const result = await res.json();
+      if (result.success) {
+        setApiConnected(true);
+        setApiStatusText('🟢 API Connected: ' + result.database);
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (err: any) {
+      setApiConnected(false);
+      setApiStatusText('🔴 API Error');
+    }
+  };
+
+  const loadCookies = async () => {
+    setLoadingCookies(true);
+    try {
+      const res = await fetch(`${API_URL}?action=list`, {
+        headers: { 'X-Panel-Auth': 'active' }
+      });
+      const result = await res.json();
+      if (result.success && result.data) {
+        setAllCookies(result.data);
+        setFilteredCookies(result.data);
+      }
+    } catch (err) {
+      setAllCookies([]);
+      setFilteredCookies([]);
+    } finally {
+      setLoadingCookies(false);
+    }
+  };
+
   const saveCookie = async () => {
-    if (!domainInput.trim() || !urlInput.trim() || !cookiesInput.trim()) {
+    if (!domainInput || !urlInput || !cookiesInput) {
       showToast('❌ Please fill all fields including Cookies JSON', 'error');
       return;
     }
 
     try {
-      const parsedCookies = JSON.parse(cookiesInput);
-      if (!Array.isArray(parsedCookies)) {
-        showToast('❌ Cookies must be a valid JSON Array [...]', 'error');
-        return;
-      }
-
+      JSON.parse(cookiesInput);
       const action = editingCookieId ? 'update' : 'add';
       const payload: any = { domain: domainInput, url: urlInput, cookies: cookiesInput };
       if (editingCookieId) payload.id = editingCookieId;
@@ -202,7 +178,7 @@ export default function Home() {
       const result = await res.json();
 
       if (result.success) {
-        showToast(editingCookieId ? '✅ Cookie updated successfully!' : '✅ Cookie saved successfully!', 'success');
+        showToast(editingCookieId ? '✅ Cookies updated & replaced successfully!' : '✅ Cookie saved successfully!', 'success');
         clearForm();
         loadCookies();
       } else {
@@ -213,7 +189,7 @@ export default function Home() {
     }
   };
 
-  const editCookie = (item: CookieItem) => {
+  const editCookie = (item: any) => {
     setDomainInput(item.domain);
     setUrlInput(item.target_url);
     setCookiesInput('');
@@ -233,11 +209,9 @@ export default function Home() {
         showToast('✅ Cookie deleted', 'success');
         if (editingCookieId === id) clearForm();
         loadCookies();
-      } else {
-        showToast('❌ Delete failed: ' + (result.error || 'Unknown error'), 'error');
       }
     } catch (err: any) {
-      showToast('❌ Delete request failed', 'error');
+      showToast('❌ Delete failed', 'error');
     }
   };
 
@@ -253,8 +227,6 @@ export default function Home() {
           type: 'SETUP_SESSION',
           sessionData: { url: result.url, cookies: result.cookies }
         }, '*');
-      } else {
-        showToast('❌ Session fetch failed: ' + result.error, 'error');
       }
     } catch (err: any) {
       showToast('❌ Injection failed', 'error');
@@ -270,8 +242,6 @@ export default function Home() {
       if (result.success && result.html) {
         await navigator.clipboard.writeText(result.html);
         showToast('📋 HTML Code copied to clipboard!', 'success');
-      } else {
-        showToast('❌ HTML copy failed: ' + (result.error || 'No HTML available'), 'error');
       }
     } catch (err: any) {
       showToast('❌ Failed to copy code', 'error');
@@ -294,7 +264,6 @@ export default function Home() {
     }
   };
 
-  // লগইন ভিউ
   if (!isAuthenticated) {
     return (
       <div className="login-container">
@@ -311,10 +280,6 @@ export default function Home() {
               <label>Password</label>
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
             </div>
-            <div className="remember-me-group" style={{ margin: '10px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <input type="checkbox" id="remember" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} />
-              <label htmlFor="remember" style={{ cursor: 'pointer', fontSize: '14px' }}>Remember Me</label>
-            </div>
             <button type="submit" className="login-btn" disabled={isLoggingIn}>
               {isLoggingIn ? '⏳ Verifying...' : '🚀 Login'}
             </button>
@@ -324,7 +289,6 @@ export default function Home() {
     );
   }
 
-  // মেইন প্যানেল ভিউ
   return (
     <div className="container">
       {toast && (
@@ -360,7 +324,7 @@ export default function Home() {
         <div className="form-group">
           <label>Cookies (JSON Array) *</label>
           <textarea
-            placeholder='Paste new cookies JSON array here...'
+            placeholder='Paste new cookies JSON here...'
             value={cookiesInput}
             onChange={(e) => setCookiesInput(e.target.value)}
           ></textarea>
@@ -395,9 +359,7 @@ export default function Home() {
               <div key={item.id} className={`cookie-item ${editingCookieId === item.id ? 'editing' : ''}`}>
                 <div className="cookie-header">
                   <span className="cookie-domain">🌐 {item.domain}</span>
-                  <span style={{ color: '#999', fontSize: '12px' }}>
-                    {item.created_at ? new Date(item.created_at).toLocaleString() : 'N/A'}
-                  </span>
+                  <span style={{ color: '#999', fontSize: '12px' }}>{new Date(item.created_at).toLocaleString()}</span>
                 </div>
                 <div className="cookie-url">🔗 {item.target_url}</div>
                 
