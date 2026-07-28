@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 
-const API_URL = '/api/proxy';
+const API_URL = '/api/v1/connect';
 const SESSION_KEY = 'cookie_manager_auth';
 
 export default function Home() {
