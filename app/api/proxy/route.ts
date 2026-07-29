@@ -92,7 +92,7 @@ export async function GET(req: NextRequest) {
 
         const tokenTime = parseInt(timestamp, 10);
         const currentTime = Math.floor(Date.now() / 1000);
-        if (currentTime - tokenTime > 10) {
+        if (currentTime - tokenTime > 7) {
           return NextResponse.json({ success: false, error: 'Token Expired! Re-click button from website.' }, { status: 403, headers });
         }
 

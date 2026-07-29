@@ -10,91 +10,180 @@ const ALLOWED_DOMAINS = [
   'admin-panel-plum-eight.vercel.app',
 ];
 
-// CORS Preflight Request Handling
-export async function OPTIONS() {
-  return new NextResponse(null, {
-    status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, X-Panel-Auth',
-    },
-  });
-}
+const BLOCKED_AGENTS = ['curl', 'wget', 'python', 'scrapy', 'bot'];
 
-function isAllowedDomain(req: NextRequest) {
+function isRequestAllowed(req: NextRequest): boolean {
+  const userAgent = req.headers.get('user-agent') || '';
   const origin = req.headers.get('origin') || '';
   const referer = req.headers.get('referer') || '';
-  const userAgent = req.headers.get('user-agent') || '';
 
-  // Block automated scrapers/bots
-  const blockedAgents = ['curl', 'wget', 'python', 'scrapy', 'bot'];
-  if (blockedAgents.some((agent) => userAgent.toLowerCase().includes(agent))) {
+  for (const blocked of BLOCKED_AGENTS) {
+    if (userAgent.toLowerCase().includes(blocked)) return false;
+  }
+
+  if (!origin && !referer) return false;
+
+  const targetUrl = origin || referer;
+  let domain = '';
+
+  try {
+    const parsed = new URL(targetUrl);
+    domain = parsed.host;
+  } catch {
     return false;
   }
 
-  // Allow direct browser visits for testing or matching origins
-  if (!origin && !referer) return true;
+  if (!domain) return false;
 
+  const hostWithoutPort = domain.split(':')[0];
   return ALLOWED_DOMAINS.some(
-    (domain) => origin.includes(domain) || referer.includes(domain)
+    (allowed) => domain === allowed || hostWithoutPort === allowed
   );
 }
 
+// Internal Helper to query Main Vault API
+async function callVaultCore(payload: object) {
+  const vaultUrl = `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/vault-core-db`;
+  
+  const res = await fetch(vaultUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-internal-secret': process.env.INTERNAL_SECRET_KEY || '',
+    },
+    body: JSON.stringify(payload),
+    cache: 'no-store',
+  });
+
+  return await res.json();
+}
+
 export async function GET(req: NextRequest) {
-  if (!isAllowedDomain(req)) {
-    return NextResponse.json(
-      { success: false, error: 'Unauthorized Domain' },
-      { status: 403 }
-    );
+  const origin = req.headers.get('origin') || '*';
+  const corsHeaders = {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Accept',
+  };
+
+  // 1. Security check
+  if (!isRequestAllowed(req)) {
+    return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403, headers: corsHeaders });
+  }
+
+  const { searchParams } = new URL(req.url);
+  const action = searchParams.get('action');
+  const encryptedToken = searchParams.get('t');
+  const idParam = searchParams.get('id');
+
+  try {
+    // Action 1: Generate temporary Base64 Token
+    if (action === 'gentoken' && idParam) {
+      const timestamp = Math.floor(Date.now() / 1000);
+      const rawToken = `${idParam}:${timestamp}`;
+      const token = Buffer.from(rawToken).toString('base64');
+      return NextResponse.json({ success: true, token }, { headers: corsHeaders });
+    }
+
+    // Action 2: Retrieve cookie using Base64 token (?t=xxx)
+    if (encryptedToken) {
+      const decoded = Buffer.from(encryptedToken, 'base64').toString('utf-8');
+      const parts = decoded.split(':');
+
+      if (parts.length !== 2) {
+        return NextResponse.json({ success: false, error: 'Invalid token' }, { status: 400, headers: corsHeaders });
+      }
+
+      const cookieId = parseInt(parts[0], 10);
+      const timestamp = parseInt(parts[1], 10);
+
+      if (Math.floor(Date.now() / 1000) - timestamp > 300) {
+        return NextResponse.json({ success: false, error: 'Token expired' }, { status: 401, headers: corsHeaders });
+      }
+
+      // Call internal Main API safely
+      const vaultResult = await callVaultCore({ action: 'get_by_id', id: cookieId });
+
+      if (vaultResult.success && vaultResult.cookie) {
+        const c = vaultResult.cookie;
+        return NextResponse.json(
+          {
+            success: true,
+            url: c.target_url,
+            cookies: c.cookies_json,
+            domain: c.domain,
+            id: c.id,
+          },
+          { headers: corsHeaders }
+        );
+      }
+
+      return NextResponse.json({ success: false, error: 'Not found' }, { status: 404, headers: corsHeaders });
+    }
+
+    // Action 3: Fetch HTML widget code
+    if (action === 'gethtml' && idParam) {
+      const htmlCode = `<button onclick="handleAutoLogin(this, ${idParam})">Inject Session</button>`;
+      return NextResponse.json({ success: true, html: htmlCode }, { headers: corsHeaders });
+    }
+
+    // Action 4: Default fetch by ID
+    if (action === 'get' && idParam) {
+      const vaultResult = await callVaultCore({ action: 'get_by_id_simple', id: idParam });
+      return NextResponse.json(vaultResult, { headers: corsHeaders });
+    }
+
+    // Action 5: List cookies
+    if (action === 'list') {
+      const vaultResult = await callVaultCore({ action: 'list' });
+      return NextResponse.json(vaultResult, { headers: corsHeaders });
+    }
+
+    return NextResponse.json({ success: false, error: 'Invalid request' }, { status: 400, headers: corsHeaders });
+  } catch (err: any) {
+    return NextResponse.json({ success: false, error: 'Service error' }, { status: 500, headers: corsHeaders });
+  }
+}
+
+export async function POST(req: NextRequest) {
+  const origin = req.headers.get('origin') || '*';
+  const corsHeaders = {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Accept',
+  };
+
+  if (!isRequestAllowed(req)) {
+    return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403, headers: corsHeaders });
   }
 
   const { searchParams } = new URL(req.url);
   const action = searchParams.get('action');
 
-  if (action === 'test') {
-    return NextResponse.json({
-      success: true,
-      database: 'Connected',
-      message: 'API is working properly!',
-    });
-  }
-
-  if (action === 'list') {
-    // Return sample data or database list
-    return NextResponse.json({
-      success: true,
-      data: [],
-    });
-  }
-
-  return NextResponse.json({ success: false, error: 'Invalid Action' }, { status: 400 });
-}
-
-export async function POST(req: NextRequest) {
-  if (!isAllowedDomain(req)) {
-    return NextResponse.json(
-      { success: false, error: 'Unauthorized Domain' },
-      { status: 403 }
-    );
-  }
-
   try {
     const body = await req.json();
-    const { searchParams } = new URL(req.url);
-    const action = searchParams.get('action');
-
-    if (action === 'login') {
-      // Perform your login logic
-      return NextResponse.json({ success: true, token: 'session_active' });
-    }
 
     if (action === 'add' || action === 'update') {
-      return NextResponse.json({ success: true, message: 'Saved successfully!' });
+      const vaultResult = await callVaultCore({ action, ...body });
+      return NextResponse.json(vaultResult, { headers: corsHeaders });
     }
 
-    return NextResponse.json({ success: false, error: 'Invalid POST Action' });
-  } catch (error) {
-    return NextResponse.json({ success: false, error: 'Server Parsing Error' }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400, headers: corsHeaders });
+  } catch (err: any) {
+    return NextResponse.json({ success: false, error: 'Server error' }, { status: 500, headers: corsHeaders });
   }
+}
+
+export async function OPTIONS(req: NextRequest) {
+  const origin = req.headers.get('origin') || '*';
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': origin,
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Accept',
+    },
+  });
 }
