@@ -130,6 +130,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // (বাকি GET লজিক আগের মতোই থাকবে...)
     // 🔒 ২. ডাইরেক্ট ব্রাউজার লিঙ্ক পেস্ট ফিল্টার
     if (!panelAuth && (action === 'list' || action === 'get')) {
       return NextResponse.json({ success: false, error: 'Access Denied', message: 'Direct API access restricted.' }, { status: 403, headers });
@@ -184,7 +185,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST Method (Login, Add, and Update Handlers Added Safely)
+// POST Method
 export async function POST(req: NextRequest) {
   const headers = corsHeaders(req);
 
@@ -201,7 +202,7 @@ export async function POST(req: NextRequest) {
     // ১. লগইন হ্যান্ডলার
     if (action === 'login') {
       const { username, password } = body;
-      const [rows]: any = await pool.query('SELECT * FROM users WHERE username = ?', [username]);
+      const [rows]: any = await pool.query('SELECT * FROM admin_users WHERE username = ?', [username]);
       
       if (rows.length === 0) {
         return NextResponse.json({ success: false, error: 'Invalid credentials' }, { status: 401, headers });
