@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
-import CryptoJS from 'crypto-js'; // 🔥 CryptoJS যুক্ত করা হলো
+import CryptoJS from 'crypto-js'; 
 
 const ALLOWED_DOMAINS = [
   'skilledustore.com',
@@ -14,9 +14,7 @@ const ALLOWED_DOMAINS = [
   'admin-panel-plum-eight.vercel.app',
 ];
 
-const SECRET_KEY = "S3cr3t_K3y_For_Skilledustore"; // 🔥 সিক্রেট কী
-
-// ব্যাকএন্ডেই মেমোরিতে ব্যবহৃত ওয়ান-টাইম টোকেন জমা রাখার ক্যাশ (Single-Use Token Storage)
+const SECRET_KEY = "S3cr3t_K3y_For_Skilledustore"; 
 const usedTokensSet = new Set<string>();
 
 function isAllowedDomain(req: NextRequest) {
@@ -78,7 +76,6 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, message: 'API Connected', database: 'Connected' }, { headers });
     }
 
-    // 🔒 ১. ওয়ান-টাইম সিকিউরড টোকেন রিকোয়েস্ট
     if (token) {
       if (usedTokensSet.has(token)) {
         return NextResponse.json({ success: false, error: 'Token Already Used! Re-click button from website.' }, { status: 403, headers });
@@ -105,7 +102,6 @@ export async function GET(req: NextRequest) {
         if (rows.length > 0) {
           const cookie = rows[0];
           
-          // 🔥 ডেটা এনক্রিপ্ট করে পাঠানো হচ্ছে
           const payloadToEncrypt = {
             url: cookie.target_url,
             cookies: cookie.cookies_json,
@@ -114,28 +110,23 @@ export async function GET(req: NextRequest) {
           };
           const encryptedData = CryptoJS.AES.encrypt(JSON.stringify(payloadToEncrypt), SECRET_KEY).toString();
 
+          // 🚫 আগের ভুলের প্লেইন-টেক্সট ব্যাকআপ সম্পূর্ণ মুছে ফেলা হলো
           return NextResponse.json({
             success: true,
-            encrypted_payload: encryptedData,
-            // Fallback (সাময়িক প্লেইন-টেক্সট ব্যাকআপ রাখা হলো যেন কোনোভাবেই লগইন ফেইল না হয়)
-            url: cookie.target_url,
-            cookies: cookie.cookies_json,
+            encrypted_payload: encryptedData
           }, { headers });
         }
 
         return NextResponse.json({ success: false, error: 'Session not found' }, { status: 404, headers });
-
       } catch (e) {
         return NextResponse.json({ success: false, error: 'Invalid Token Payload' }, { status: 400, headers });
       }
     }
 
-    // 🔒 ২. ডাইরেক্ট ব্রাউজার লিঙ্ক পেস্ট ফিল্টার
     if (!panelAuth && (action === 'list' || action === 'get')) {
       return NextResponse.json({ success: false, error: 'Access Denied', message: 'Direct API access restricted.' }, { status: 403, headers });
     }
 
-    // 🔑 ৩. ওয়েবসাইটের বাটন চাপলে ওয়ান-টাইম ডাইনামিক টোকেন জেনারেটর
     if (action === 'gentoken' && id) {
       const timestamp = Math.floor(Date.now() / 1000);
       const nonce = crypto.randomBytes(6).toString('hex'); 
@@ -144,35 +135,31 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, token: encodedToken }, { headers });
     }
 
-    // 📋 ৪. এডমিন প্যানেলের তালিকা
     if ((action === 'list' || !action) && panelAuth === 'active') {
       const [rows]: any = await pool.query('SELECT id, domain, target_url, created_at FROM cookies ORDER BY created_at DESC');
       return NextResponse.json({ success: true, data: rows }, { headers });
     }
 
-    // 📋 ৫. এডিট ভিউ
     if (action === 'get' && id && panelAuth === 'active') {
       const [rows]: any = await pool.query('SELECT id, domain, target_url FROM cookies WHERE id = ?', [id]);
       if (rows.length > 0) {
-        const cookie = rows[0];
-        return NextResponse.json({ success: true, id: cookie.id, domain: cookie.domain, url: cookie.target_url, cookies: "" }, { headers });
+        return NextResponse.json({ success: true, id: rows[0].id, domain: rows[0].domain, url: rows[0].target_url, cookies: "" }, { headers });
       }
       return NextResponse.json({ success: false, error: 'Cookie not found' }, { status: 404, headers });
     }
 
-    // 📋 ৬. HTML বাটন কোড জেনারেশন
     if (action === 'gethtml') {
       if (!id) return NextResponse.json({ success: false, error: 'Missing ID' }, { status: 400, headers });
       const [rows]: any = await pool.query('SELECT * FROM cookies WHERE id = ?', [id]);
       if (rows.length === 0) return NextResponse.json({ success: false, error: 'Cookie not found' }, { status: 404, headers });
 
       const cookie = rows[0];
-      const htmlCode = `<button style="background:linear-gradient(135deg,#ec4899 0%,#8b5cf6 100%);color:white;border:none;padding:12px 24px;font-size:15px;font-weight:600;border-radius:10px;cursor:pointer;box-shadow:0 4px 20px rgba(139,92,246,0.5);transition:all 0.3s ease;display:inline-flex;align-items:center;gap:10px;border:1px solid rgba(255,255,255,0.15);" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 25px rgba(139,92,246,0.65)';" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 4px 20px rgba(139,92,246,0.5)';" onclick="handleSecureLogin(this, ${cookie.id}, '${cookie.domain}')"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg> Access Now</button>`;
+      // 🚫 বাটনের HTML থেকে ওয়েবসাইটের পুরনো onclick স্ক্রিপ্ট মুছে দেওয়া হলো
+      const htmlCode = `<button id="Cookies${cookie.id}" style="background:linear-gradient(135deg,#ec4899 0%,#8b5cf6 100%);color:white;border:none;padding:12px 24px;font-size:15px;font-weight:600;border-radius:10px;cursor:pointer;box-shadow:0 4px 20px rgba(139,92,246,0.5);transition:all 0.3s ease;display:inline-flex;align-items:center;gap:10px;border:1px solid rgba(255,255,255,0.15);" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 25px rgba(139,92,246,0.65)';" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 4px 20px rgba(139,92,246,0.5)';"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg> Access Now</button>`;
 
       return NextResponse.json({ success: true, html: htmlCode }, { headers });
     }
 
-    // 🗑️ ৭. ডিলিট
     if (action === 'delete') {
       if (!id) return NextResponse.json({ success: false, error: 'Missing ID' }, { status: 400, headers });
       await pool.query('DELETE FROM cookies WHERE id = ?', [id]);
