@@ -24,10 +24,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: sessionData.error || 'Session failed' }, { status: 400 });
     }
 
-    // 🔥 Proxy থেকে আসা এনক্রিপ্টেড ডেটাই সরাসরি এক্সটেনশনকে পাঠানো হচ্ছে
+    // 🔥 সার্ভার থেকে যাই আসুক (এনক্রিপ্টেড বা প্লেইন), পুরোটাই এক্সটেনশনকে দিয়ে দেওয়া হচ্ছে
     return NextResponse.json({
       success: true,
       encrypted_payload: sessionData.encrypted_payload,
+      url: sessionData.url,
+      cookies: sessionData.cookies
     });
 
   } catch (error: any) {
