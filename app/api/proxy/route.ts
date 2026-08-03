@@ -130,7 +130,6 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // (বাকি GET লজিক আগের মতোই থাকবে...)
     // 🔒 ২. ডাইরেক্ট ব্রাউজার লিঙ্ক পেস্ট ফিল্টার
     if (!panelAuth && (action === 'list' || action === 'get')) {
       return NextResponse.json({ success: false, error: 'Access Denied', message: 'Direct API access restricted.' }, { status: 403, headers });
@@ -185,4 +184,62 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST Method একদম আগের মতোই থাকবে (No changes needed)
+// POST Method (Login, Add, and Update Handlers Added Safely)
+export async function POST(req: NextRequest) {
+  const headers = corsHeaders(req);
+
+  if (!isAllowedDomain(req)) {
+    return NextResponse.json({ success: false, error: 'Forbidden', message: 'Access denied.' }, { status: 403, headers });
+  }
+
+  const { searchParams } = new URL(req.url);
+  const action = searchParams.get('action');
+
+  try {
+    const body = await req.json();
+
+    // ১. লগইন হ্যান্ডলার
+    if (action === 'login') {
+      const { username, password } = body;
+      const [rows]: any = await pool.query('SELECT * FROM users WHERE username = ?', [username]);
+      
+      if (rows.length === 0) {
+        return NextResponse.json({ success: false, error: 'Invalid credentials' }, { status: 401, headers });
+      }
+
+      const user = rows[0];
+      const isPasswordValid = await bcrypt.compare(password, user.password);
+
+      if (!isPasswordValid) {
+        return NextResponse.json({ success: false, error: 'Invalid credentials' }, { status: 401, headers });
+      }
+
+      return NextResponse.json({ success: true, message: 'Login successful' }, { headers });
+    }
+
+    // ২. কুকি যোগ করা (Add)
+    if (action === 'add') {
+      const { domain, url, cookies } = body;
+      if (!domain || !url || !cookies) {
+        return NextResponse.json({ success: false, error: 'All fields are required' }, { status: 400, headers });
+      }
+      await pool.query('INSERT INTO cookies (domain, target_url, cookies_json) VALUES (?, ?, ?)', [domain, url, cookies]);
+      return NextResponse.json({ success: true, message: 'Cookie saved successfully' }, { headers });
+    }
+
+    // ৩. কুকি আপডেট করা (Update)
+    if (action === 'update') {
+      const { id, domain, url, cookies } = body;
+      if (!id || !domain || !url || !cookies) {
+        return NextResponse.json({ success: false, error: 'All fields are required' }, { status: 400, headers });
+      }
+      await pool.query('UPDATE cookies SET domain = ?, target_url = ?, cookies_json = ? WHERE id = ?', [domain, url, cookies, id]);
+      return NextResponse.json({ success: true, message: 'Cookie updated successfully' }, { headers });
+    }
+
+    return NextResponse.json({ success: false, error: 'Invalid Action' }, { status: 400, headers });
+
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message || 'Internal Server Error' }, { status: 500, headers });
+  }
+}
