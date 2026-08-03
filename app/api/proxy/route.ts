@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
+import CryptoJS from 'crypto-js'; // 🔥 CryptoJS ইমপোর্ট করা হলো
 
 const ALLOWED_DOMAINS = [
   'skilledustore.com',
@@ -13,7 +14,9 @@ const ALLOWED_DOMAINS = [
   'admin-panel-plum-eight.vercel.app',
 ];
 
-// ব্যাকএন্ডেই মেমোরিতে ব্যবহৃত ওয়ান-টাইম টোকেন জমা রাখার ক্যাশ (Single-Use Token Storage)
+const SECRET_KEY = process.env.EXTENSION_SECRET_KEY || "S3cr3t_K3y_For_Skilledustore"; // 🔥 আপনার সিক্রেট কী
+
+// ব্যাকএন্ডেই মেমোরিতে ব্যবহৃত ওয়ান-টাইম টোকেন জমা রাখার ক্যাশ (Single-Use Token Storage)
 const usedTokensSet = new Set<string>();
 
 function isAllowedDomain(req: NextRequest) {
@@ -75,9 +78,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, message: 'API Connected', database: 'Connected' }, { headers });
     }
 
-    // 🔒 ১. ওয়ান-টাইম সিকিউরড টোকেন রিকোয়েস্ট
+    // 🔒 ১. ওয়ান-টাইম সিকিউরড টোকেন রিকোয়েস্ট
     if (token) {
-      // 🚫 আগে একবার ব্যবহার হয়ে থাকলে পোস্টম্যানে ব্লক করবে
+      // 🚫 আগে একবার ব্যবহার হয়ে থাকলে পোস্টম্যানে ব্লক করবে
       if (usedTokensSet.has(token)) {
         return NextResponse.json({ success: false, error: 'Token Already Used! Re-click button from website.' }, { status: 403, headers });
       }
@@ -96,7 +99,7 @@ export async function GET(req: NextRequest) {
           return NextResponse.json({ success: false, error: 'Token Expired! Re-click button from website.' }, { status: 403, headers });
         }
 
-        // 💥 ডাটা দেওয়ার পরপরই টোকেনটি "Used" হিসেবে লক করে দেওয়া (Single-Use Verification)
+        // 💥 ডাটা দেওয়ার পরপরই টোকেনটি "Used" হিসেবে লক করে দেওয়া (Single-Use Verification)
         usedTokensSet.add(token);
         
         // মেমোরি পরিষ্কার রাখার জন্য ৫ মিনিট পর সেট থেকে মুছে ফেলা
@@ -105,12 +108,19 @@ export async function GET(req: NextRequest) {
         const [rows]: any = await pool.query('SELECT * FROM cookies WHERE id = ?', [targetId]);
         if (rows.length > 0) {
           const cookie = rows[0];
-          return NextResponse.json({
-            success: true,
+          
+          // 🔥 শুধুমাত্র এই অংশটুকু আপডেট করা হয়েছে (CryptoJS Encryption)
+          const payloadToEncrypt = {
             url: cookie.target_url,
             cookies: cookie.cookies_json,
             domain: cookie.domain,
             id: cookie.id
+          };
+          const encryptedData = CryptoJS.AES.encrypt(JSON.stringify(payloadToEncrypt), SECRET_KEY).toString();
+
+          return NextResponse.json({
+            success: true,
+            encrypted_payload: encryptedData
           }, { headers });
         }
 
@@ -126,7 +136,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Access Denied', message: 'Direct API access restricted.' }, { status: 403, headers });
     }
 
-    // 🔑 ৩. ওয়েবসাইটের বাটন চাপলে ওয়ান-টাইম ডাইনামিক টোকেন জেনারেটর
+    // 🔑 ৩. ওয়েবসাইটের বাটন চাপলে ওয়ান-টাইম ডাইনামিক টোকেন জেনারেটর
     if (action === 'gentoken' && id) {
       const timestamp = Math.floor(Date.now() / 1000);
       const nonce = crypto.randomBytes(6).toString('hex'); // ইউনিক অন-টাইম হ্যাশ
